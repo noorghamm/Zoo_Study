@@ -63,100 +63,91 @@ function initShop() {
     }
 }
 
-// --- Study Hub: countdown timer with coin tracking ---
+// --- Study Hub: server-side timer with coin tracking (Frank) ---
 function initTimer() {
     if (!$('#timer-display').length) return;
 
-    let timerInterval = null;
-    let totalSeconds = 0;
-    let running = false;
+    let interval = null;
 
-    // Format seconds as HH:MM:SS
     function formatTime(s) {
-        const h = Math.floor(s / 3600);
-        const m = Math.floor((s % 3600) / 60);
-        const sec = s % 60;
-        return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+        const h = String(Math.floor(s / 3600)).padStart(2, '0');
+        const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+        const sec = String(s % 60).padStart(2, '0');
+        return h + ':' + m + ':' + sec;
     }
 
-    // Update the coins-earned label based on elapsed minutes (10 coins/min)
-    function updateCoinsDisplay() {
-        const mins = Math.floor(totalSeconds / 60);
-        $('#timer-coins').text('🪙 ' + (mins * 10) + ' coins earned');
-    }
-
-    $('#btn-start').on('click', function () {
-        running = true;
-        timerInterval = setInterval(function () {
-            totalSeconds++;
-            $('#timer-display').text(formatTime(totalSeconds));
-            updateCoinsDisplay();
-        }, 1000);
-        $('#btn-start').hide();
-        $('#btn-pause').show();
-        $('#btn-stop').show();
-    });
-
-    // Toggle between pause and resume
-    $('#btn-pause').on('click', function () {
-        if (running) {
-            clearInterval(timerInterval);
-            running = false;
-            $('#btn-pause').text('▶ Resume');
-        } else {
-            timerInterval = setInterval(function () {
-                totalSeconds++;
-                $('#timer-display').text(formatTime(totalSeconds));
-                updateCoinsDisplay();
-            }, 1000);
-            running = true;
-            $('#btn-pause').text('⏸ Pause');
-        }
-    });
-
-    // Stop timer and POST session duration to server; reload page on success
-    $('#btn-stop').on('click', function () {
-        clearInterval(timerInterval);
-        running = false;
-        const minutes = Math.floor(totalSeconds / 60);
-
-        if (minutes < 1) {
-            showSessionToast('⚠️ Session too short (minimum 1 minute).');
-            resetTimer();
-            return;
-        }
-
-        $.ajax({
-            url: ZOO_CONFIG.urls.logSession,
-            method: 'POST',
-            data: { duration_minutes: minutes, csrfmiddlewaretoken: ZOO_CONFIG.csrfToken },
-            success: function (data) {
-                if (data.success) {
-                    showSessionToast('🎉 Session saved! +' + data.coins_earned + ' coins | Streak: ' + data.streak + ' days');
-                    setTimeout(function () { location.reload(); }, 2500);
-                } else {
-                    showSessionToast('❌ ' + data.message);
-                }
-            }
+    function updateTimer() {
+        $.get(ZOO_CONFIG.urls.timerGet, function(data) {
+            $('#timer-display').text(formatTime(data.elapsed));
+            $('#timer-coins').text('🪙 ' + data.coins + ' coins earned');
         });
-
-        resetTimer();
-    });
-
-    // Reset timer display and button visibility to initial state
-    function resetTimer() {
-        totalSeconds = 0;
-        $('#timer-display').text('00:00:00');
-        updateCoinsDisplay();
-        $('#btn-start').show();
-        $('#btn-pause').hide().text('⏸ Pause');
-        $('#btn-stop').hide();
     }
 
     function showSessionToast(msg) {
         $('#session-toast').text(msg).fadeIn();
-        setTimeout(function () { $('#session-toast').fadeOut(); }, 3000);
+        setTimeout(function() { $('#session-toast').fadeOut(); }, 3000);
     }
+
+    // On page load, check if a timer is already running on the server
+    $.get(ZOO_CONFIG.urls.timerGet, function(data) {
+        if (data.elapsed > 0) {
+            $('#timer-display').text(formatTime(data.elapsed));
+            $('#timer-coins').text('🪙 ' + data.coins + ' coins earned');
+            $('#btn-start').hide();
+            $('#btn-pause').show();
+            $('#btn-stop').show();
+            interval = setInterval(updateTimer, 1000);
+        }
+    });
+
+    // Start
+    $('#btn-start').on('click', function() {
+        $.get(ZOO_CONFIG.urls.timerStart, function() {
+            if (!interval) {
+                interval = setInterval(updateTimer, 1000);
+            }
+            $('#btn-start').hide();
+            $('#btn-pause').show();
+            $('#btn-stop').show();
+        });
+    });
+
+    // Pause / Resume toggle
+    $('#btn-pause').on('click', function() {
+        if ($('#btn-pause').text().trim().includes('Pause')) {
+            $.get(ZOO_CONFIG.urls.timerPause, function() {
+                clearInterval(interval);
+                interval = null;
+                $('#btn-pause').text('▶ Resume');
+            });
+        } else {
+            $.get(ZOO_CONFIG.urls.timerResume, function() {
+                if (!interval) {
+                    interval = setInterval(updateTimer, 1000);
+                }
+                $('#btn-pause').text('⏸ Pause');
+            });
+        }
+    });
+
+    // Stop & Save
+    $('#btn-stop').on('click', function() {
+        $.get(ZOO_CONFIG.urls.timerStop, function(data) {
+            clearInterval(interval);
+            interval = null;
+            if (data.coins_earned > 0) {
+                showSessionToast('🎉 Session saved! +' + data.coins_earned + ' coins');
+                setTimeout(function() { location.reload(); }, 2500);
+            } else {
+                showSessionToast('⚠️ Session too short (minimum 1 minute).');
+            }
+            $('#timer-display').text('00:00:00');
+            $('#timer-coins').text('🪙 0 coins earned');
+            $('#btn-start').show();
+            $('#btn-pause').hide().text('⏸ Pause');
+            $('#btn-stop').hide();
+        });
+    });
 }
 
 // --- Study Hub: AJAX task completion toggle ---

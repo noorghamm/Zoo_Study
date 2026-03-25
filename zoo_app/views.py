@@ -9,6 +9,7 @@ from django.utils import timezone
 from zoo_app.models import UserProfile, Task, StudySession, Animal, UserZoo, Resource
 from zoo_app.forms import UserRegisterForm, UserLoginForm, TaskForm, ResourceForm
 from django.contrib import messages
+from datetime import datetime
 
 
 def home(request):
@@ -80,13 +81,31 @@ def dashboard(request):
     hours = total_study_minutes // 60
     minutes = total_study_minutes % 60
 
+    total_time_display = profile.today_study_time_display()
+    weekly_total_display = profile.weekly_study_display
+    daily_average_display = profile.daily_average_display
+
     tasks = Task.objects.filter(user=request.user, completed=False).order_by('deadline')
+
+    total_tasks = Task.objects.filter(user=request.user)
+    incomplete_tasks = Task.objects.filter(user=request.user, completed=False)
+    completed_count = total_tasks.count() - incomplete_tasks.count()
+    total_count = total_tasks.count()
+
+    if total_count > 0:
+        progress_percentage = int((completed_count / total_count) * 100)
+    else:
+        progress_percentage = 0
 
     return render(request, 'zoo_app/dashboard.html', {
         'profile': profile,
         'hours': hours,
         'minutes': minutes,
         'tasks': tasks,
+        'total_time_display': total_time_display,
+        'weekly_total_display': weekly_total_display,
+        'daily_average_display': daily_average_display,
+        'progress_percentage': progress_percentage,
     })
 
 
@@ -180,6 +199,87 @@ def notes(request):
         'tasks': tasks,
         'resource_form': resource_form,
     })
+
+
+# ======== SERVER-SIDE TIMER ENDPOINTS (Frank) ========
+
+@login_required
+def start_timer(request):
+    request.session['start_time'] = timezone.now().isoformat()
+    request.session['paused_duration'] = 0
+    request.session['is_running'] = True
+    request.session['pause_time'] = None
+    return JsonResponse({"status": "started"})
+
+
+@login_required
+def pause_timer(request):
+    if request.session.get('is_running'):
+        request.session['is_running'] = False
+        request.session['pause_time'] = timezone.now().isoformat()
+    return JsonResponse({"status": "paused"})
+
+
+@login_required
+def resume_timer(request):
+    if not request.session.get('is_running') and request.session.get('pause_time'):
+        pause_time = datetime.fromisoformat(request.session['pause_time'])
+        paused_duration = (timezone.now() - pause_time).total_seconds()
+        request.session['paused_duration'] += paused_duration
+        request.session['pause_time'] = None
+        request.session['is_running'] = True
+    return JsonResponse({"status": "resumed"})
+
+
+@login_required
+def get_timer(request):
+    start_time_str = request.session.get('start_time')
+    if not start_time_str:
+        return JsonResponse({"elapsed": 0, "coins": 0})
+
+    start_time = datetime.fromisoformat(start_time_str)
+    now = timezone.now()
+    paused_duration = request.session.get('paused_duration', 0)
+    is_running = request.session.get('is_running', False)
+
+    if not is_running and request.session.get('pause_time'):
+        pause_time = datetime.fromisoformat(request.session['pause_time'])
+        elapsed = (pause_time - start_time).total_seconds() - paused_duration
+    else:
+        elapsed = (now - start_time).total_seconds() - paused_duration
+
+    elapsed = max(0, int(elapsed))
+    coins = (elapsed // 60) * 10  # optional preview, do not save yet
+
+    return JsonResponse({
+        "elapsed": elapsed,
+        "coins": coins
+    })
+
+
+@login_required
+def stop_timer(request):
+    start_time_str = request.session.get('start_time')
+    paused_duration = request.session.get('paused_duration', 0)
+    coins_earned = 0
+
+    if start_time_str:
+        start_dt = datetime.fromisoformat(start_time_str)
+        total_elapsed = (timezone.now() - start_dt).total_seconds()
+        total_elapsed -= paused_duration
+        total_elapsed = max(0, int(total_elapsed))
+        duration_minutes = total_elapsed // 60
+
+        # log the session and update user coins
+        session, coins_earned = StudySession.log_session(request.user, duration_minutes)
+
+    # Reset session
+    request.session['is_running'] = False
+    request.session['start_time'] = None
+    request.session['pause_time'] = None
+    request.session['paused_duration'] = 0
+
+    return JsonResponse({"status": "stopped", "coins_earned": coins_earned})
 
 
 # ======== AJAX ENDPOINTS ========
