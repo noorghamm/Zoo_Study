@@ -11,6 +11,7 @@ from zoo_app.forms import UserRegisterForm, UserLoginForm, TaskForm, ResourceFor
 from django.contrib import messages
 from datetime import datetime
 
+# ======== REGISTRATION/PROFILES/LOGIN/ETC (Abdul) ========
 
 def home(request):
     """Render the public landing page."""

@@ -2,8 +2,9 @@ from django import forms
 from django.contrib.auth.models import User
 from zoo_app.models import UserProfile, Task, Resource
 
+# ======== VARIOUS REGISTRATION/LOGIN FORMS (Abdul) ========
 
-# Registration form — validates that passwords match before saving
+# Registration form - validates that passwords match before saving
 class UserRegisterForm(forms.ModelForm):
     # PasswordInput hides the typed characters
     password = forms.CharField(widget=forms.PasswordInput())
@@ -22,13 +23,13 @@ class UserRegisterForm(forms.ModelForm):
             raise forms.ValidationError("Passwords do not match")
 
 
-# Login form — plain username/password, no model binding
+# Login form - plain username/password, no model binding
 class UserLoginForm(forms.Form):
     username = forms.CharField()
     password = forms.CharField(widget=forms.PasswordInput())
 
 
-# Profile form — currently no editable fields; kept for future expansion
+# Profile form - currently no editable fields; kept for future expansion
 class UserProfileForm(forms.ModelForm):
     class Meta:
         model = UserProfile
@@ -46,7 +47,7 @@ class TaskForm(forms.ModelForm):
         }
 
 
-# Resource/note form — used on the Notes page to attach links or text to a task
+# Resource/note form - used on the Notes page to attach links or text to a task
 class ResourceForm(forms.ModelForm):
     class Meta:
         model = Resource
